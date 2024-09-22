@@ -75,13 +75,13 @@
       }
 
       toLatex() {
+        const scalerLatex = this.scaler === 1 ? '' :
+          this.scaler === -1 ? '-' : `${this.scaler}`;
         const inner = this.operand.toLatex();
         if (this.operand instanceof SumNode) {
-          return `${this.scaler}\\left(${inner}\\right)`;
+          return `${scalerLatex}\\left(${inner}\\right)`;
         }
-        const scalar = this.scaler === 1 ? '' :
-          this.scaler === -1 ? '-' : `${this.scaler}`;
-        return `${scalar}${inner}`;
+        return `${scalerLatex}${inner}`;
       }
 
       simplify() {
@@ -561,8 +561,8 @@
     - An upper case letter (except "I" and "O") denotes an invertible square matrix.<br/>
     - An upper case letter "I" denotes an identity matrix.<br/>
     - An uppercase letter "O" denotes an zero matrix.<br/>
-    - Matrix inverse of matrix A is denoted as "A^{-1}".<br/>
-    - Matrix transpose of matrix A is denoted as "A^T".<br/>
+    - Inverse of a matrix A is denoted as "A^{-1}".<br/>
+    - Transpose of a matrix A is denoted as "A^T".<br/>
     - Use "(" and ")" when needed, such as "(A+B)^{-1}".<br/>
   </p>
   <p><strong>Input examples:</strong><br/>
