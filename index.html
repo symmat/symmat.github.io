@@ -1,224 +1,581 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Symmat: Simplify Matrix Expression</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Symmat: Simplify Matrix Expression</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 0;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+    }
+    input[type="text"] {
+      width: 100%;
+      padding: 10px;
+      font-size: 20px;
+      border: 1px solid #ccc;
+      box-sizing: border-box;
+      align-items: center;
+    }
+    p {
+      font-size: 20px;
+    }
+    .math {
+      border: 1px solid #ccc;
+      padding: 10px;
+      min-height: 70px;
+      background-color: #f9f9f9;
+    }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/polyfill/v3/polyfill.min.js?features=es6"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.5.0/math.js"></script>
+  <script type="text/javascript" id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+  <script>
+    /* Base class of all nodes */
+    class BaseNode {
+      simplify() {
+        return this;
+      }
+    }
+
+    class AtomMatrixNode extends BaseNode {
+      constructor(name) {
+        super();
+        this.name = name;
+      }
+
+      equals(other) {
+        return other instanceof AtomMatrixNode && this.name === other.name;
+      }
+
+      toLatex() {
+        return this.name;
+      }
+    }
+
+    const identityMatrix = new AtomMatrixNode("I");
+    const zeroMatrix = new AtomMatrixNode("O");
+
+    class CompositeNode extends BaseNode {}
+
+    class ScalerMultiNode extends CompositeNode {
+      constructor(scaler, operand) {
+        super();
+        this.scaler = scaler;
+        this.operand = operand;
+      }
+
+      equals(other) {
+        return other instanceof ScalerMultiNode &&
+          this.scaler === other.scaler &&
+          this.operand.equals(other.operand);
+      }
+
+      toLatex() {
+        const inner = this.operand.toLatex();
+        if (this.operand instanceof SumNode) {
+          return `${this.scaler}\\left(${inner}\\right)`;
         }
-        input[type="text"] {
-            width: 100%;
-            padding: 10px;
-            font-size: 20px;
-            border: 1px solid #ccc;
-            box-sizing: border-box;
-            align-items: center;
+        const scalar = this.scaler === 1 ? '' :
+          this.scaler === -1 ? '-' : `${this.scaler}`;
+        return `${scalar}${inner}`;
+      }
+
+      simplify() {
+        const o = this.operand.simplify();
+        if (this.scaler === 0 || zeroMatrix.equals(o)) {
+          return zeroMatrix;
         }
-        p {
-            margin-top: 10px;
-            font-size: 20px;
-            text-align: left;
+        if (this.scaler === 1) {
+          return o;
         }
-    </style>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.5.0/math.js"></script>
+        if (o instanceof ScalerMultiNode) {
+          return new ScalerMultiNode(this.scaler * o.scaler, o.operand);
+        }
+        return new ScalerMultiNode(this.scaler, o);
+      }
+    }
+
+    class TransposeNode extends CompositeNode {
+      constructor(operand) {
+        super();
+        this.operand = operand;
+      }
+
+      equals(other) {
+        return other instanceof TransposeNode && this.operand.equals(other.operand);
+      }
+
+      toLatex() {
+        const inner = this.operand.toLatex();
+        if (!(this.operand instanceof AtomMatrixNode)) {
+          return `\\left(${inner}\\right)^\\top`;
+        }
+        return `${inner}^{\\top}`;
+      }
+
+      simplify() {
+        const o = this.operand.simplify();
+        if (zeroMatrix.equals(o) || identityMatrix.equals(o)) {
+          return o;
+        }
+        if (o instanceof TransposeNode) {
+          return o.operand;
+        }
+        if (o instanceof MatrixProductNode) {
+          return new MatrixProductNode(o.operands.map(f => new TransposeNode(f)).reverse());
+        }
+        if (o instanceof InverseNode) {
+          return new InverseNode(new TransposeNode(o.operand));
+        }
+        if (o instanceof ScalerMultiNode) {
+          return new ScalerMultiNode(o.scaler, new TransposeNode(o.operand));
+        }
+        return this;
+      }
+    }
+
+    class InverseNode extends CompositeNode {
+      constructor(operand) {
+        super();
+        this.operand = operand;
+      }
+
+      equals(other) {
+        return other instanceof InverseNode && this.operand.equals(other.operand);
+      }
+
+      toLatex() {
+        const inner = this.operand.toLatex();
+        if (!(this.operand instanceof AtomMatrixNode)) {
+          return `\\left(${inner}\\right)^{-1}`;
+        }
+        return `${inner}^{-1}`;
+      }
+
+      simplify() {
+        const o = this.operand.simplify();
+        if (o instanceof InverseNode) {
+          return o.operand;
+        }
+        if (o instanceof MatrixProductNode) {
+          return new MatrixProductNode(o.operands.map(f => new InverseNode(f)).reverse());
+        }
+        if (o instanceof TransposeNode) {
+          return new TransposeNode(new InverseNode(o.operand));
+        }
+        if (o instanceof ScalerMultiNode) {
+          return new ScalerMultiNode(1. / o.scaler, new InverseNode(o.operand));
+        }
+        if (identityMatrix.equals(o)) {
+          return identityMatrix;
+        }
+        if (zeroMatrix.equals(o)) {
+          throw new Error("Encounter inverse of zero matrix.")
+        }
+        return this;
+      }
+    }
+
+    class MatrixProductNode extends CompositeNode {
+      constructor(operands) {
+        super();
+        this.operands = operands;
+      }
+
+      equals(other) {
+        if (!(other instanceof MatrixProductNode) || this.operands.length !== other.operands.length) {
+          return false;
+        }
+        return this.operands.every((operand, i) => operand.equals(other.operands[i]));
+      }
+
+      toLatex() {
+        return this.operands.map(operand => {
+          const latex = operand.toLatex();
+          return (operand instanceof SumNode) ? `\\left(${latex}\\right)` : latex;
+        }).join('');
+      }
+
+      simplify() {
+        const factors = this.operands.map((operand) => operand.simplify());
+        let scaler = 1;
+        let newFactors = [];
+        for (const factor of factors) {
+          if (zeroMatrix.equals(factor)) {
+            return zeroMatrix;
+          }
+          if (factor instanceof MatrixProductNode) {
+            newFactors.push(...factor.operands);
+          } else if (factor instanceof ScalerMultiNode) {
+            scaler *= factor.scaler;
+            newFactors.push(factor.operand);
+          } else {
+            newFactors.push(factor);
+          }
+        }
+        newFactors = newFactors.filter(f => !(f instanceof AtomMatrixNode && f.name === 'I'));
+        let simplified = [];
+        for (let i = 0; i < newFactors.length; i++) {
+          const current = newFactors[i];
+          if (simplified.length > 0) {
+            const prev = simplified[simplified.length - 1];
+            if (current instanceof InverseNode && current.operand.equals(prev)) {
+              simplified.pop();
+              continue;
+            } else if (prev instanceof InverseNode && prev.operand.equals(current)) {
+              simplified.pop();
+              continue;
+            }
+          }
+          simplified.push(current);
+        }
+        if (simplified.length === 0) {
+          simplified.push(identityMatrix);
+        }
+        let result;
+        if (simplified.length === 1) {
+          result = simplified[0];
+        } else {
+          result = new MatrixProductNode(simplified);
+        }
+        if (scaler !== 1) {
+          result = new ScalerMultiNode(scaler, result);
+        }
+        return result;
+      }
+    }
+
+    class SumNode extends CompositeNode {
+      constructor(operands) {
+        super();
+        this.operands = operands;
+      }
+
+      equals(other) {
+        if (!(other instanceof SumNode)) return false;
+        const otherTerms = [...other.operands];
+        if (this.operands.length !== otherTerms.length) return false;
+        for (const term of this.operands) {
+          const idx = otherTerms.findIndex(t => t.equals(term));
+          if (idx === -1) return false;
+          otherTerms.splice(idx, 1);
+        }
+        return otherTerms.length === 0;
+      }
+
+      toLatex() {
+        return this.operands.map((operand, i) => {
+          let inner = operand.toLatex();
+          if (i > 0 && inner.length > 0 && inner[0] !== "+" && inner[0] !== "-") {
+            return `+${inner}`;
+          } else {
+            return inner;
+          }
+        }).join('');
+      }
+
+      simplify() {
+        const terms = this.operands.map((operand) => operand.simplify());
+        let collectedTerms = [];
+        for (const term of terms) {
+          if (term instanceof SumNode) {
+            collectedTerms.push(...term.operands);
+          } else if (!zeroMatrix.equals(term)) {
+            collectedTerms.push(term);
+          }
+        }
+        
+        const collected = [];
+        for (const term of collectedTerms) {
+          let scalar = 1;
+          let expr = term;
+          if (term instanceof ScalerMultiNode) {
+            scalar = term.scaler;
+            expr = term.operand;
+          }
+          collected.push({ scalar, expr });
+        }
+        const groups = new Map();
+        for (const { scalar, expr } of collected) {
+          let found = false;
+          for (const [key, val] of groups) {
+            if (expr.equals(key)) {
+              groups.set(key, val + scalar);
+              found = true;
+              break;
+            }
+          }
+          if (!found) {
+            groups.set(expr, scalar);
+          }
+        }
+        const newScalers = [];
+        const newOperands = [];
+        const newTerms = [];
+        for (const [expr, scalar] of groups) {
+          if (scalar === 0) {
+            continue;
+          }
+          newScalers.push(scalar);
+          newOperands.push(expr);
+          newTerms.push(
+            scalar === 1 ? expr : new ScalerMultiNode(scalar, expr)
+          );
+        }
+        if (newTerms.length === 0) {
+          return zeroMatrix;
+        }
+        if (newTerms.length === 1) {
+          return newTerms[0];
+        }
+        const allEqual = a => a.every(v => v === a[0]);
+        if (allEqual(newScalers) && newScalers[0] !== 1) {
+          return new ScalerMultiNode(newScalers[0], new SumNode(newOperands));
+        }
+        return new SumNode(newTerms);
+      }
+    }
+
+    function tokenize(str) {
+      const tokens = [];
+      let pos = 0;
+      const isLetter = c => /[A-Z]/.test(c);
+      const isDigit = c => /\d/.test(c);
+
+      while (pos < str.length) {
+        let c = str[pos];
+        if (c === ' ') {
+          pos++;
+          continue;
+        }
+        if (c === '+' || c === '-') {
+          tokens.push({ type: 'Operator', value: c });
+          pos++;
+        } else if (c === "\\") {
+          if (str.substr(pos, 6) === '\\left(') {
+            tokens.push({ type: 'LeftParen' });
+            pos += 6;
+          } else if (str.substr(pos, 7) === '\\right)') {
+            tokens.push({ type: 'RightParen' });
+            pos += 7;
+          } else {
+            throw new Error(`Unexpected \\ at position ${pos}`);
+          }
+        } else if (c === '(') {
+          tokens.push({ type: 'LeftParen' });
+          pos++;
+        } else if (c === ')') {
+          tokens.push({ type: 'RightParen' });
+          pos++;
+        } else if (c === '^') {
+          if (str.substr(pos, 5) === '^{-1}') {
+            tokens.push({ type: 'Inverse' });
+            pos += 5;
+          } else if (str.substr(pos, 2) === '^T') {
+            tokens.push({ type: 'Transpose' });
+            pos += 2;
+          } else if (str.substr(pos, 5) === '^\\top') {
+            tokens.push({ type: 'Transpose' });
+            pos += 5;
+          } else if (str.substr(pos, 7) === '^{\\top}') {
+            tokens.push({ type: 'Transpose' });
+            pos += 7;
+          } else {
+            throw new Error(`Unexpected ^ at position ${pos}`);
+          }
+        } else if (isDigit(c) || c === '.' || (c === '-' && (pos === 0 || ['(', '+', '-'].includes(str[pos-1])))) {
+          let numStr = '';
+          while (pos < str.length && (isDigit(str[pos]) || str[pos] === '.' || str[pos] === '-')) {
+            numStr += str[pos];
+            pos++;
+          }
+          const num = parseFloat(numStr);
+          tokens.push({ type: 'Scalar', value: num });
+        } else if (isLetter(c)) {
+          const name = c;
+          tokens.push({ type: 'Matrix', value: name });
+          pos++;
+        } else {
+          throw new Error(`Unexpected character ${c} at position ${pos}`);
+        }
+      }
+      return tokens;
+    }
+
+    class Parser {
+      constructor(tokens) {
+        this.tokens = tokens;
+        this.pos = 0;
+      }
+
+      currentToken() {
+        if (this.pos >= this.tokens.length) return null;
+        return this.tokens[this.pos];
+      }
+
+      parseExpression() {
+        let terms = [];
+        let term = this.parseTerm();
+        terms.push(term);
+        while (true) {
+          const token = this.currentToken();
+          if (token && token.type === 'Operator' && (token.value === '+' || token.value === '-')) {
+            const nextTerm = this.parseTerm();
+            terms.push(nextTerm);
+          } else {
+            break;
+          }
+        }
+        return terms.length === 1 ? terms[0] : new SumNode(terms);
+      }
+
+      parseTerm() {
+        const factors = [];
+        while (true) {
+          const factor = this.parseFactor();
+          if (!factor) {
+            break;
+          }
+          factors.push(factor);
+          const nextToken = this.currentToken();
+          if (!nextToken || ['Operator', 'RightParen', 'Inverse', 'Transpose'].includes(nextToken.type)) {
+            break;
+          }
+        }
+        if (factors.length === 0) {
+          throw new Error('Empty term');
+        }
+        return factors.length === 1 ? factors[0] : new MatrixProductNode(factors);
+      }
+
+      parseFactor() {
+        let scalar = 1;
+        let token = this.currentToken();
+        if (token && token.type === 'Operator' && (token.value === '+' || token.value === '-')) {
+          scalar = token.value === '-' ? -1 : 1;
+          this.pos++;
+        }
+        token = this.currentToken();
+        if (token && token.type === 'Scalar') {
+          scalar *= token.value;
+          this.pos++;
+        }
+        let atom = this.parseAtom();
+        while (true) {
+          token = this.currentToken();
+          if (token && token.type === 'Transpose') {
+            this.pos++;
+            atom = new TransposeNode(atom);
+          } else if (token && token.type === 'Inverse') {
+            this.pos++;
+            atom = new InverseNode(atom);
+          } else {
+            break;
+          }
+        }
+        if (scalar !== 1) {
+          return new ScalerMultiNode(scalar, atom);
+        } else {
+          return atom;
+        }
+      }
+
+      parseAtom() {
+        const token = this.currentToken();
+        if (!token) {
+          throw new Error('Unexpected end of input');
+        }
+        if (token.type === 'LeftParen') {
+          this.pos++;
+          const expr = this.parseExpression();
+          const nextToken = this.currentToken();
+          if (!nextToken || nextToken.type !== 'RightParen') {
+            throw new Error('Expected )');
+          }
+          this.pos++;
+          return expr;
+        } else if (token.type === 'Matrix') {
+          const matrix = new AtomMatrixNode(token.value);
+          this.pos++;
+          return matrix;
+        } else {
+          throw new Error(`Unexpected token type: ${token.type}`);
+        }
+      }
+    }
+
+    function runOnInput() {
+      const inputBox = document.getElementById('inputBox');
+      const originalMath = document.getElementById('originalMath');
+      const simplifiedMath = document.getElementById('simplifiedMath');
+      const inputLatex = inputBox.value;
+      console.log("inputLatex =", inputLatex);
+      try {
+        if (inputLatex === "") {
+          originalMath.textContent = "The input is empty.";
+          simplifiedMath.textContent = "The input is empty.";
+        } else {
+          const tokens = tokenize(inputLatex);
+          const parser = new Parser(tokens);
+          const ast = parser.parseExpression();
+          const originalLatex = ast.toLatex();
+          console.log("originalLatex =", originalLatex);
+          originalMath.textContent = `\\[${originalLatex}\\]`;
+          MathJax.typeset();
+          try {
+            const simplified = ast.simplify();
+            const simplifiedLatex = simplified.toLatex();
+            console.log("simplifiedLatex =", simplifiedLatex);
+            simplifiedMath.textContent = `\\[${simplifiedLatex}\\]`;
+            MathJax.typeset();
+          } catch (error) {
+            const errorMessage = 'Simplification error: ' + error;
+            console.error(errorMessage);
+            simplifiedMath.textContent = errorMessage;
+          }
+        }
+      } catch (error) {
+        const errorMessage = 'Parse error: ' + error;
+        console.error(errorMessage);
+        originalMath.textContent = errorMessage;
+        simplifiedMath.textContent = '';
+      }
+    }
+
+    window.addEventListener("load", function(){
+      console.log("Load completes.")
+      const originalMath = document.getElementById('originalMath');
+      const simplifiedMath = document.getElementById('simplifiedMath');
+      originalMath.textContent = "";
+      simplifiedMath.textContent = "";
+    });
+  </script>
 </head>
 <body>
-    <h1>Symmat: Simplify Matrix Expression</h1>
-    <input type="text" id="inputBox" oninput="simplifyExpression()" placeholder="Enter expression here... (such as A+B+AB+BA+B+A)">
-    <p id="output"></p>
-
-    <script>
-        /**
-         * Simplifies a matrix expression by merging like terms.
-         * @param {string} expression - The algebraic expression as a string.
-         * @returns {string} - The simplified expression as a string.
-         */
-        function simplifyMatrixExpression(expression) {
-            // Remove spaces from the expression
-            expression = expression.replace(/\s+/g, '');
-
-            // Tokenize the expression
-            const tokens = tokenize(expression);
-            
-            const simplified = evaluate(tokens);
-
-            return simplified.toString();
-        }
-
-        /**
-         * Tokenizes the given expression into an array of tokens.
-         * @param {string} expression - The algebraic expression as a string.
-         * @returns {Array} - An array of tokens.
-         */
-        function tokenize(expression) {
-            const tokens = [];
-            let currentToken = '';
-
-            for (let i = 0; i < expression.length; i++) {
-                const char = expression[i];
-
-                if (char === '+' || char === '-' || char === '*' || char === '/') {
-                    if (currentToken !== '') {
-                        tokens.push(currentToken);
-                        currentToken = '';
-                    }
-                    tokens.push(char);
-                } else {
-                    currentToken += char;
-                }
-            }
-
-            if (currentToken !== '') {
-                tokens.push(currentToken);
-            }
-
-            return tokens;
-        }
-
-        /**
-         * Simplifies the given expression by merging like terms.
-         * @param {Array} tokens - An array of tokens representing the expression.
-         * @returns {string} - The simplified expression as a string.
-         */
-        function evaluate(tokens) {
-            const terms = extractTerms(tokens);
-            const simplifiedTerms = simplifyTerms(terms);
-
-            return buildExpression(simplifiedTerms);
-        }
-
-        /**
-         * Extracts variables and coefficients from the given tokens.
-         * @param {Array} tokens - An array of tokens representing the expression.
-         * @returns {Object} - An object mapping variables to their coefficients.
-         */
-        function extractTerms(tokens) {
-            const terms = {};
-
-            for (let i = 0; i < tokens.length; i++) {
-                const token = tokens[i];
-
-                if (isVariable(token)) {
-                    const coefficient = getCoefficient(i - 1, tokens);
-                    const sign = getSign(i - 2, tokens);
-
-                    const key = token;
-                    const value = sign * coefficient;
-
-                    if (terms[key]) {
-                        terms[key] += value;
-                    } else {
-                        terms[key] = value;
-                    }
-                }
-            }
-
-            return terms;
-        }
-
-        /**
-         * Gets the coefficient for a given variable.
-         * @param {number} index - The index of the previous token.
-         * @param {Array} tokens - An array of tokens representing the expression.
-         * @returns {number} - The coefficient.
-         */
-        function getCoefficient(index, tokens) {
-            if (index >= 0 && isNumber(tokens[index])) {
-                return Number(tokens[index]);
-            }
-            return 1;
-        }
-
-        /**
-         * Gets the sign for a given variable.
-         * @param {number} index - The index of the previous token.
-         * @param {Array} tokens - An array of tokens representing the expression.
-         * @returns {number} - The sign.
-         */
-        function getSign(index, tokens) {
-            if (index >= 0 && (tokens[index] === '+' || tokens[index] === '-')) {
-                return tokens[index] === '+' ? 1 : -1;
-            }
-            return 1;
-        }
-
-        /**
-         * Checks if a token is a variable.
-         * @param {string} token - The token to check.
-         * @returns {boolean} - True if the token is a variable, false otherwise.
-         */
-        function isVariable(token) {
-            return /^[a-zA-Z]+$/.test(token);
-        }
-
-        /**
-         * Checks if a token is a number.
-         * @param {string} token - The token to check.
-         * @returns {boolean} - True if the token is a number, false otherwise.
-         */
-        function isNumber(token) {
-            return !isNaN(Number(token));
-        }
-
-        /**
-         * Simplifies the terms by merging like terms.
-         * @param {Object} terms - An object mapping variables to their coefficients.
-         * @returns {Array} - An array of simplified terms.
-         */
-        function simplifyTerms(terms) {
-            const simplifiedTerms = [];
-
-            for (const variable in terms) {
-                const coefficient = terms[variable];
-
-                if (coefficient !== 0) {
-                    simplifiedTerms.push(coefficient === 1 ? variable : `${coefficient}${variable}`);
-                }
-            }
-
-            return simplifiedTerms;
-        }
-
-        /**
-         * Builds the final expression from the simplified terms.
-         * @param {Array} terms - An array of simplified terms.
-         * @returns {string} - The final expression as a string.
-         */
-        function buildExpression(terms) {
-            let expression = '';
-
-            for (let i = 0; i < terms.length; i++) {
-                const term = terms[i];
-
-                if (term.startsWith('-')) {
-                    expression += ' ' + term;
-                } else if (i > 0) {
-                    expression += ' + ' + term;
-                } else {
-                    expression += term;
-                }
-            }
-
-            return expression;
-        }
-
-        function simplifyExpression() {
-            try {
-                const inputBox = document.getElementById('inputBox');
-                const output = document.getElementById('output');
-                const expression = inputBox.value;
-                output.textContent = simplifyMatrixExpression(expression);
-            } catch (error) {
-                console.error('Error simplifying expression:', error);
-                document.getElementById('output').textContent = 'Invalid expression';
-            }
-        }
-    </script>
+  <h1>Symmat: Simplify Matrix Expression</h1>
+  <p><strong>Input syntax:</strong><br/>
+    - An upper case letter (except "I" and "O") denotes an invertible square matrix.<br/>
+    - An upper case letter "I" denotes an identity matrix.<br/>
+    - An uppercase letter "O" denotes an zero matrix.<br/>
+    - Matrix inverse of matrix A is denoted as "A^{-1}".<br/>
+    - Matrix transpose of matrix A is denoted as "A^T".<br/>
+    - Use "(" and ")" when needed, such as "(A+B)^{-1}".<br/>
+  </p>
+  <p><strong>Input examples:</strong><br/>
+    - (A+AI+2BC)^{-1}(2BIC+3A-A)<br/>
+    - A^TB^T-(BIA)^T+0C-2O-3O^T+I+I^T<br/>
+    - -2A+2.5B-(A^{-1})^{-1}+3(A^T)^T-2B<br/>
+    - B(AB)^{-1}A-AB(AB)^{-1}BA<br/>
+  </p>
+  <p></p>
+  <input type="text" id="inputBox" oninput="runOnInput()" placeholder="Enter expression here...">
+  <p>You have input:</p>
+  <p class="math" id="originalMath">Loading dependent resources... It may take some minutes.</p>
+  <p>Simplified result:</p>
+  <p class="math" id="simplifiedMath">Loading dependent resources... It may take some minutes.</p>
 </body>
 </html>
