@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Symmat: Simplify Matrix Expression</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            font-size: 20px;
+            border: 1px solid #ccc;
+            box-sizing: border-box;
+            align-items: center;
+        }
+        p {
+            margin-top: 10px;
+            font-size: 20px;
+            text-align: left;
+        }
+    </style>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.5.0/math.js"></script>
+</head>
+<body>
+    <h1>Symmat: Simplify Matrix Expression</h1>
+    <input type="text" id="inputBox" oninput="simplifyExpression()" placeholder="Enter expression here... (such as A+B+AB+BA+B+A)">
+    <p id="output"></p>
+
+    <script>
+        /**
+         * Simplifies a matrix expression by merging like terms.
+         * @param {string} expression - The algebraic expression as a string.
+         * @returns {string} - The simplified expression as a string.
+         */
+        function simplifyMatrixExpression(expression) {
+            // Remove spaces from the expression
+            expression = expression.replace(/\s+/g, '');
+
+            // Tokenize the expression
+            const tokens = tokenize(expression);
+            
+            const simplified = evaluate(tokens);
+
+            return simplified.toString();
+        }
+
+        /**
+         * Tokenizes the given expression into an array of tokens.
+         * @param {string} expression - The algebraic expression as a string.
+         * @returns {Array} - An array of tokens.
+         */
+        function tokenize(expression) {
+            const tokens = [];
+            let currentToken = '';
+
+            for (let i = 0; i < expression.length; i++) {
+                const char = expression[i];
+
+                if (char === '+' || char === '-' || char === '*' || char === '/') {
+                    if (currentToken !== '') {
+                        tokens.push(currentToken);
+                        currentToken = '';
+                    }
+                    tokens.push(char);
+                } else {
+                    currentToken += char;
+                }
+            }
+
+            if (currentToken !== '') {
+                tokens.push(currentToken);
+            }
+
+            return tokens;
+        }
+
+        /**
+         * Simplifies the given expression by merging like terms.
+         * @param {Array} tokens - An array of tokens representing the expression.
+         * @returns {string} - The simplified expression as a string.
+         */
+        function evaluate(tokens) {
+            const terms = extractTerms(tokens);
+            const simplifiedTerms = simplifyTerms(terms);
+
+            return buildExpression(simplifiedTerms);
+        }
+
+        /**
+         * Extracts variables and coefficients from the given tokens.
+         * @param {Array} tokens - An array of tokens representing the expression.
+         * @returns {Object} - An object mapping variables to their coefficients.
+         */
+        function extractTerms(tokens) {
+            const terms = {};
+
+            for (let i = 0; i < tokens.length; i++) {
+                const token = tokens[i];
+
+                if (isVariable(token)) {
+                    const coefficient = getCoefficient(i - 1, tokens);
+                    const sign = getSign(i - 2, tokens);
+
+                    const key = token;
+                    const value = sign * coefficient;
+
+                    if (terms[key]) {
+                        terms[key] += value;
+                    } else {
+                        terms[key] = value;
+                    }
+                }
+            }
+
+            return terms;
+        }
+
+        /**
+         * Gets the coefficient for a given variable.
+         * @param {number} index - The index of the previous token.
+         * @param {Array} tokens - An array of tokens representing the expression.
+         * @returns {number} - The coefficient.
+         */
+        function getCoefficient(index, tokens) {
+            if (index >= 0 && isNumber(tokens[index])) {
+                return Number(tokens[index]);
+            }
+            return 1;
+        }
+
+        /**
+         * Gets the sign for a given variable.
+         * @param {number} index - The index of the previous token.
+         * @param {Array} tokens - An array of tokens representing the expression.
+         * @returns {number} - The sign.
+         */
+        function getSign(index, tokens) {
+            if (index >= 0 && (tokens[index] === '+' || tokens[index] === '-')) {
+                return tokens[index] === '+' ? 1 : -1;
+            }
+            return 1;
+        }
+
+        /**
+         * Checks if a token is a variable.
+         * @param {string} token - The token to check.
+         * @returns {boolean} - True if the token is a variable, false otherwise.
+         */
+        function isVariable(token) {
+            return /^[a-zA-Z]+$/.test(token);
+        }
+
+        /**
+         * Checks if a token is a number.
+         * @param {string} token - The token to check.
+         * @returns {boolean} - True if the token is a number, false otherwise.
+         */
+        function isNumber(token) {
+            return !isNaN(Number(token));
+        }
+
+        /**
+         * Simplifies the terms by merging like terms.
+         * @param {Object} terms - An object mapping variables to their coefficients.
+         * @returns {Array} - An array of simplified terms.
+         */
+        function simplifyTerms(terms) {
+            const simplifiedTerms = [];
+
+            for (const variable in terms) {
+                const coefficient = terms[variable];
+
+                if (coefficient !== 0) {
+                    simplifiedTerms.push(coefficient === 1 ? variable : `${coefficient}${variable}`);
+                }
+            }
+
+            return simplifiedTerms;
+        }
+
+        /**
+         * Builds the final expression from the simplified terms.
+         * @param {Array} terms - An array of simplified terms.
+         * @returns {string} - The final expression as a string.
+         */
+        function buildExpression(terms) {
+            let expression = '';
+
+            for (let i = 0; i < terms.length; i++) {
+                const term = terms[i];
+
+                if (term.startsWith('-')) {
+                    expression += ' ' + term;
+                } else if (i > 0) {
+                    expression += ' + ' + term;
+                } else {
+                    expression += term;
+                }
+            }
+
+            return expression;
+        }
+
+        function simplifyExpression() {
+            try {
+                const inputBox = document.getElementById('inputBox');
+                const output = document.getElementById('output');
+                const expression = inputBox.value;
+                output.textContent = simplifyMatrixExpression(expression);
+            } catch (error) {
+                console.error('Error simplifying expression:', error);
+                document.getElementById('output').textContent = 'Invalid expression';
+            }
+        }
+    </script>
+</body>
+</html>
